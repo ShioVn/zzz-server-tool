@@ -15,6 +15,7 @@ Web-based config builder for ZZZ private servers. Agents, W-Engines, Drive Discs
 ### Prerequisites
 
 - [Node.js](https://nodejs.org) v18+
+- [Working Remielle](https://git.xeondev.com/remielle/remielle)
 
 ### Quick start
 
@@ -35,6 +36,3 @@ npm run dev       # → http://localhost:5173
 npm run build     # output in build/
 ```
 
-## Data source
-
-Game data from [nanoka.cc](https://static.nanoka.cc)
