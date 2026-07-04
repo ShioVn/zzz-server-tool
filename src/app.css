@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+:root {
+	color-scheme: dark;
+	font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-size: 16px;
+	line-height: 1.6;
+	font-weight: 400;
+	color: #e2e8f0;
+	background: #02050f;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background: radial-gradient(circle at 10% 8%, rgba(34, 211, 238, 0.16), transparent 18%),
+		radial-gradient(circle at 95% 15%, rgba(236, 72, 153, 0.18), transparent 18%), #02050f;
+}
+
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	background: radial-gradient(circle at 8% 15%, rgba(56, 189, 248, 0.14), transparent 20%),
+		radial-gradient(circle at 88% 12%, rgba(236, 72, 153, 0.12), transparent 18%),
+		radial-gradient(circle at 52% 90%, rgba(168, 85, 247, 0.08), transparent 24%);
+	z-index: -1;
+}
+
+button,
+input,
+textarea {
+	font: inherit;
+}
+
+img,
+svg {
+	display: block;
+	max-width: 100%;
+}
+
+::selection {
+	background: rgba(34, 211, 238, 0.28);
+	color: white;
+}
+
+/* === Global scrollbar hiding (keep scroll) === */
+* {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+	display: none;
+}
+
+/* === Glass Card === */
+.panel,
+.glass-card,
+.hero-panel {
+	border: 1px solid rgba(148, 163, 184, 0.16);
+	background: rgba(15, 23, 42, 0.72);
+	backdrop-filter: blur(20px);
+	box-shadow: 0 20px 60px rgba(2, 6, 23, 0.35);
+	border-radius: 28px;
+}
+
+.hero-panel {
+	background: linear-gradient(130deg, rgba(15, 23, 42, 0.98), rgba(88, 28, 135, 0.24));
+}
+
+.panel {
+	padding: 1.5rem;
+}
+
+.glass-card {
+	padding: 1.25rem;
+	transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.glass-card:hover {
+	transform: translateY(-3px);
+	border-color: rgba(34, 211, 238, 0.4);
+	box-shadow: 0 0 38px rgba(34, 211, 238, 0.16);
+}
+
+/* === Form Inputs === */
+.field-input {
+	width: 100%;
+	border-radius: 16px;
+	border: 1px solid rgba(71, 85, 105, 0.8);
+	background: rgba(2, 6, 23, 0.88);
+	padding: 0.95rem 1rem;
+	color: #f8fafc;
+	outline: none;
+	transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.field-input:focus {
+	border-color: rgba(34, 211, 238, 0.75);
+	box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
+}
+
+/* === Buttons === */
+.primary-btn,
+.secondary-btn {
+	border-radius: 999px;
+	padding: 0.85rem 1.2rem;
+	font-size: 0.95rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease,
+		box-shadow 180ms ease;
+}
+
+.primary-btn {
+	border: 1px solid rgba(34, 211, 238, 0.35);
+	background: rgba(34, 211, 238, 0.16);
+	color: #c8ffff;
+}
+
+.secondary-btn {
+	border: 1px solid rgba(244, 114, 182, 0.35);
+	background: rgba(244, 114, 182, 0.14);
+	color: #ffd6ec;
+}
+
+.primary-btn:hover,
+.secondary-btn:hover {
+	transform: translateY(-1px);
+}
+
+/* === Stat Chips === */
+.stat-chip {
+	border-radius: 999px;
+	border: 1px solid rgba(34, 211, 238, 0.22);
+	background: rgba(34, 211, 238, 0.1);
+	padding: 0.55rem 0.9rem;
+	color: #a5f3fc;
+	font-size: 0.9rem;
+}
+
+.stat-chip.accent {
+	border-color: rgba(244, 114, 182, 0.25);
+	background: rgba(244, 114, 182, 0.12);
+	color: #fbcfe8;
+}
+
+.stat-chip.muted {
+	border-color: rgba(148, 163, 184, 0.2);
+	background: rgba(15, 23, 42, 0.8);
+	color: #cbd5e1;
+}
+
+/* === Animations === */
+@keyframes floatIn {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes slideIn {
+	from {
+		opacity: 0;
+		transform: translateX(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.content-area > * {
+	animation: floatIn 240ms ease-out;
+}
+
+/* === Scrollable containers === */
+.scroll-thin {
+	scrollbar-width: thin;
+}
+
+/* === Responsive === */
+@media (max-width: 1024px) {
+	.main-panel {
+		width: 100%;
+	}
+}

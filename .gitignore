@@ -1,0 +1,18 @@
+node_modules/
+build/
+.svelte-kit/
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.local
+
+# Server config (sample, not part of source)
+config.zon
+
+# Agent internal config (not needed for other machines)
+.prompts/
+.specify/
+.agents/
