@@ -545,7 +545,7 @@ export function buildZonConfigText(
 	// Close starting_items
 	lines.push("    },");
 	lines.push("");
-	lines.push('    .dummy_cmd = "IBDLKJAPKME",');
+	lines.push('    .dummy_cmd = "IECPJKNJHCF",');
 	lines.push("}");
 
 	return lines.join("\n");
@@ -567,12 +567,12 @@ export function parseZonConfigText(text: string): ZonConfig {
 			const kv = parseZonEntryKv(entry);
 			if (kv.id) {
 				const rawId = stripDot(kv.id);
-					// Skip non-agent entries that leaked into avatar_overrides (Weapon_* or numeric disc IDs)
-					if (rawId.startsWith("Weapon_") || /^\d+$/.test(rawId)) continue;
-					// Apply reverse mapping: server enum name -> local config id
-					const id = ZON_ENUM_EXCEPTIONS_REVERSE[rawId] ?? rawId;
+				// Skip non-agent entries that leaked into avatar_overrides (Weapon_* or numeric disc IDs)
+				if (rawId.startsWith("Weapon_") || /^\d+$/.test(rawId)) continue;
+				// Apply reverse mapping: server enum name -> local config id
+				const id = ZON_ENUM_EXCEPTIONS_REVERSE[rawId] ?? rawId;
 				const override: AvatarOverride = {
-						id,
+					id,
 					level: Number(kv.level) || 60,
 					rank: Number(kv.rank) || 6,
 					talents: Number(kv.talents) || 0,
@@ -593,9 +593,9 @@ export function parseZonConfigText(text: string): ZonConfig {
 			const kv = parseZonEntryKv(entry);
 			if (kv.id) {
 				const rawEnumName = stripDot(kv.id);
-					// Apply reverse mapping: server enum name -> local config id
-					const enumName = ZON_ENUM_EXCEPTIONS_REVERSE[rawEnumName] ?? rawEnumName;
-					// Try to convert weapon enum name back to numeric id
+				// Apply reverse mapping: server enum name -> local config id
+				const enumName = ZON_ENUM_EXCEPTIONS_REVERSE[rawEnumName] ?? rawEnumName;
+				// Try to convert weapon enum name back to numeric id
 				const weapon = getWeaponList().find(
 					(w) => w.enumName && w.enumName === enumName
 				);
@@ -639,7 +639,7 @@ export function parseZonConfigText(text: string): ZonConfig {
 						const statId = Number(pkv.key) || 11102;
 						const value = Number(pkv.base_value) || 0;
 						const rawAdd = Number(pkv.add_value) || 0;
-							const add = Math.max(0, rawAdd - 1);
+						const add = Math.max(0, rawAdd - 1);
 						if (pi === 0) {
 							disc.mainStat = { statId, value, add };
 						} else {
@@ -662,9 +662,9 @@ export function parseZonConfigText(text: string): ZonConfig {
 			if (kv.id && kv.zone) {
 				const zoneName = stripDot(kv.id);
 				const zoneVal = Number(kv.zone);
-					if (zoneName === "hadal_zone_scheduled") config.shiyuZone = zoneVal;
-					else if (zoneName === "boss_challenge_normal") config.daZone = zoneVal;
-					else if (zoneName === "boss_challenge_hard") config.daHardZone = zoneVal;
+				if (zoneName === "hadal_zone_scheduled") config.shiyuZone = zoneVal;
+				else if (zoneName === "boss_challenge_normal") config.daZone = zoneVal;
+				else if (zoneName === "boss_challenge_hard") config.daHardZone = zoneVal;
 			}
 		}
 	}
