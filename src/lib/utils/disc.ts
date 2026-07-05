@@ -407,9 +407,12 @@ export function buildZonConfigText(
 	lines.push(".{");
 	lines.push("    // UDP bind address.");
 	lines.push("    // Can be overridden by the `-b` option.");
-	lines.push('    .bind_address = "127.0.0.1:20501",');
+	lines.push('    .game_bind_address = "127.0.0.1:20501",');
 	lines.push("");
-	lines.push("    // The amount of sessions allowed to be processed concurrently.");
+	lines.push("    // UDP bind address for the control socket.");
+	lines.push("    // Can be overridden by the `-B` option.");
+	lines.push('    .ctl_bind_address = "127.0.0.1:15810",');
+	lines.push("");
 	lines.push("    // Zero means unlimited amount.");
 	lines.push("    // Can be overridden by the `-c` option.");
 	lines.push("    .concurrent_sessions_limit = 0,");
