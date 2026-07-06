@@ -16,3 +16,13 @@ config.zon
 .prompts/
 .specify/
 .agents/
+
+# Packaging outputs
+dist-pkg/
+dist-electron/
+*.exe
+*.bat
+entry.js
+launcher.cs
+electron_err.txt
+electron_log.txt

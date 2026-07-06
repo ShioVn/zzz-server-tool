@@ -77,11 +77,19 @@
 				await new Promise(resolve => setTimeout(resolve, 1000));
 			}
 			
-			const res = await fetch("/api/server/save-config", {
+			await fetch("/api/server/save-config", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ path: app.remiellePath, text: buildZonConfigText(app.zonConfig, getAwakeneableAgentCodes()) }),
 			});
+
+			// Encode bin directly without restarting
+			await fetch("/api/server/encode-bin", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ path: app.remiellePath }),
+			});
+
 			showToast(t("toast.configSaved"));
 		} catch {
 			// ignore
@@ -101,17 +109,33 @@
 				await new Promise(resolve => setTimeout(resolve, 1000));
 			}
 
+			// 1. Save config.zon
+			const configText = buildZonConfigText(app.zonConfig, getAwakeneableAgentCodes());
 			await fetch("/api/server/save-config", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ path: app.remiellePath, text: buildZonConfigText(app.zonConfig, getAwakeneableAgentCodes()) }),
+				body: JSON.stringify({ path: app.remiellePath, text: configText }),
 			});
 
+			// 2. Restart server — zig build will compile config.zon → USD_666.bin
 			await fetch("/api/server/restart", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ path: app.remiellePath }),
 			});
+
+			// 3. Wait for server to be fully up
+			await server.fetchStatus();
+			// Small extra wait for zig compile to finish
+			await new Promise(resolve => setTimeout(resolve, 3000));
+
+			// 4. Overwrite USD_666.bin with our encoded version (after zig is done)
+			await fetch("/api/server/encode-bin", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ path: app.remiellePath }),
+			});
+
 			await server.fetchStatus();
 			showToast(t("toast.configSavedAndRestarted"));
 		} catch {

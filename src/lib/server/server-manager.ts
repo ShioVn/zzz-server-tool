@@ -12,6 +12,10 @@ const SERVER_PORT = 20501;
 const SERVER_PID_PATH = join(os.tmpdir(), "zzzsrv_pid.txt");
 const SERVER_BAT_PATH = join(os.tmpdir(), "zzzsrv.bat");
 
+// Paths relative to server root directory
+const CONFIG_ZON_REL = join("gamesv", "config.zon");
+const BIN_REL = join("Persistent", "LocalStorage", "USD_666.bin");
+
 let serverLogs: string[] = [];
 
 function appendLog(msg: string) {
@@ -225,17 +229,36 @@ export async function stopServerProcess(): Promise<void> {
 }
 
 /**
- * Save config.zon and delete Persistent/LocalStorage/USD_666.bin.
+ * Save config.zon only. Server needs to be restarted to pick up changes.
  */
 export function saveConfigFile(path: string | null, text: string): void {
 	const cwd = path || process.cwd();
-	const configPath = join(cwd, "gamesv", "config.zon");
+	const configPath = join(cwd, CONFIG_ZON_REL);
 	writeFileSync(configPath, text, "utf-8");
 	appendLog(`Saved config.zon to ${configPath}`);
+}
 
-	const binPath = join(cwd, "Persistent", "LocalStorage", "USD_666.bin");
-	if (existsSync(binPath)) {
-		unlinkSync(binPath);
-		appendLog("Deleted Persistent/LocalStorage/USD_666.bin");
+/**
+ * Encode config.zon → USD_666.bin directly using TS encoder.
+ * Call this AFTER server has fully started, so zig build doesn't overwrite it.
+ */
+export function encodeBinFile(path: string | null): boolean {
+	const cwd = path || process.cwd();
+	const configPath = join(cwd, CONFIG_ZON_REL);
+	const binPath = join(cwd, BIN_REL);
+
+	if (!existsSync(configPath)) {
+		appendLog("config.zon not found — cannot encode");
+		return false;
+	}
+
+	try {
+		const { encodeConfigFileSync } = require("./encoder.js") as typeof import("./encoder");
+		encodeConfigFileSync(configPath, binPath);
+		appendLog("Encoded USD_666.bin from config.zon (TS encoder)");
+		return true;
+	} catch (e) {
+		appendLog(`Encoder failed: ${e}`);
+		return false;
 	}
 }
