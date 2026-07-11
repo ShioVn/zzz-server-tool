@@ -1,5 +1,7 @@
 import { getCharacters, getCharacterDetail, getAssetUrl } from "$lib/api/zzz-api";
 import type { Agent } from "$lib/types";
+import { getCharacterBaseStats } from "$lib/stats/calculations";
+import type { FinalStats } from "$lib/stats/calculations";
 
 let _agents = $state<Agent[]>([]);
 let _loading = $state(true);
@@ -66,14 +68,14 @@ async function init() {
 				if (v.hitType) Object.assign(_hitTypeNames, v.hitType);
 				if (v.camp) Object.assign(_campNames, v.camp);
 			} else {
-				console.error(`Failed to load detail for agent ${result.reason}`);
+				// console.error(`Failed to load detail for agent ${result.reason}`);
 			}
 		}
 
 		_agents = agents;
 	} catch (e) {
 		_error = String(e);
-		console.error("Failed to load agents:", e);
+		// console.error("Failed to load agents:", e);
 	} finally {
 		_loading = false;
 	}
@@ -83,6 +85,11 @@ async function init() {
 init();
 
 export function getAgents() {
+	// Auto-retry if empty and had error
+	if (_agents.length === 0 && _error && !_loading) {
+		_loading = true;
+		init();
+	}
 	return _agents;
 }
 
@@ -110,20 +117,16 @@ export function getCampNames() {
 	return _campNames;
 }
 
-/** Get list of agents that have awakening, with their enum code and awakening ID for ZON export */
-export function getAwakeneableAgentCodes(): Array<{ id: number; code: string; awakening: number }> {
-	return _agents
-		.filter((a) => a.awakeningId && a.zonEnum)
-		.map((a) => ({
-			id: a.id,
-			code: a.zonEnum,
-			awakening: a.awakeningId!,
-		}));
-}
 
 /** Reload agents from API */
 export function reloadAgents() {
 	_loading = true;
 	_error = null;
 	init();
+}
+
+/** Fetch agent detail from API and compute base stats at given level+rank */
+export async function getAgentBaseStats(agentId: number, level: number, rank: number): Promise<FinalStats> {
+	const detail = await getCharacterDetail(agentId);
+	return getCharacterBaseStats(detail, level, rank);
 }

@@ -26,3 +26,15 @@ entry.js
 launcher.cs
 electron_err.txt
 electron_log.txt
+
+# Build / packaging artifacts
+dist/
+gen_launcher*.cjs
+gen_launcher*.js
+launcher*.js
+launcher*.cjs
+pkg-debug.txt
+
+# SEA (Single Executable App) artifacts
+sea-entry.cjs
+sea-prep.blob

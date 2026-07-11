@@ -1,10 +1,10 @@
-import { json } from "@sveltejs/kit";
-import { execSync, spawn } from "child_process";
+import { json, type RequestEvent } from "@sveltejs/kit";
+import { execSync } from "child_process";
 import { existsSync, writeFileSync } from "fs";
 import { resolve } from "path";
-import { startServerProcess, waitForPort } from "$lib/server/server-manager";
+import { startServerProcess } from "$lib/server/server-manager";
 
-export async function POST({ request }) {
+export async function POST({ request }: RequestEvent) {
 	try {
 		const body = await request.json();
 		const path = body?.path ?? resolve(process.cwd());

@@ -5,14 +5,19 @@
 		getError,
 	} from "$lib/data/endgames.svelte";
 	import { getState } from "$lib/stores/app.svelte";
+	import { DEFAULT_PLAYER_UID } from "$lib/config";
+	import { runControlCommand } from "$lib/stores/server.svelte";
 	import { getAssetUrl } from "$lib/api/zzz-api";
 	import { t } from "$lib/i18n/index.svelte";
+	import { showToast } from "$lib/stores/toast.svelte";
 
 	const app = getState();
 
 	const endgames = $derived(getEndgames());
 	const loading = $derived(isLoading());
 	const error = $derived(getError());
+
+	let playerUid = $state(DEFAULT_PLAYER_UID);
 
 	// 4 sub-tabs
 	const tabFilters = [
@@ -47,42 +52,35 @@
 		}),
 	);
 
-	// Auto-set defaults: when endgames first load and no zones selected, pick 2 highest IDs
-	$effect(() => {
-		if (endgames.length > 0 && !app.zonConfig.shiyuZone && !app.zonConfig.daZone && !app.zonConfig.daHardZone) {
-			// Get top 2 highest IDs from Shiyu, DA, DA Hard
-			const candidates = endgames
-				.filter((eg) => eg.type !== "Simulation")
-				.sort((a, b) => b.id - a.id)
-				.slice(0, 2);
-			for (const eg of candidates) {
-				if (eg.type === "Shiyu Defense") app.zonConfig.shiyuZone = eg.id;
-				else if (eg.subType === "Deadly Assault") app.zonConfig.daZone = eg.id;
-				else if (eg.subType === "Deadly Assault (Hard)") app.zonConfig.daHardZone = eg.id;
+	async function selectEndgame(zoneId: number, type: string, subType: string) {
+		try {
+			if (type === "Shiyu Defense") {
+				await runControlCommand("mod-hadal-entrance", ["hadal_zone_scheduled", String(zoneId)]);
+				selectedShiyuId = zoneId;
+			} else if (subType === "Deadly Assault") {
+				await runControlCommand("mod-hadal-entrance", ["boss_challenge_normal", String(zoneId)]);
+				selectedDaId = zoneId;
+			} else if (subType === "Deadly Assault (Hard)") {
+				await runControlCommand("mod-hadal-entrance", ["boss_challenge_hard", String(zoneId)]);
+				selectedDaHardId = zoneId;
+			} else {
+				// Simulation — no rmctl call, just UI feedback
+				selectedDaHardId = zoneId;
 			}
+			showToast(t("toast.endgameZoneSelected"), "success");
+		} catch (e) {
+			showToast("Failed to set zone: " + String(e), "error");
 		}
-	});
-
-	function selectEndgame(zoneId: number, type: string, subType: string) {
-		if (type === "Shiyu Defense") {
-			app.zonConfig.shiyuZone = zoneId;
-		} else if (subType === "Deadly Assault") {
-			app.zonConfig.daZone = zoneId;
-		} else if (subType === "Deadly Assault (Hard)") {
-			app.zonConfig.daHardZone = zoneId;
-		}
-		app.zonConfig.importHighlights.equipment = true;
-		(
-			(globalThis as unknown as Record<string, unknown>).__showToast as (
-				m: string,
-			) => void
-		)?.(t("toast.endgameZoneSelected"));
 	}
 
+	let selectedShiyuId = $state<number | null>(null);
+	let selectedDaId = $state<number | null>(null);
+	let selectedDaHardId = $state<number | null>(null);
+
 	function isZoneSelected(zoneId: number, type: string, subType: string): boolean {
-		if (type === "Shiyu Defense") return app.zonConfig.shiyuZone === zoneId;
-		if (subType === "Deadly Assault") return app.zonConfig.daZone === zoneId;
-		if (subType === "Deadly Assault (Hard)") return app.zonConfig.daHardZone === zoneId;
+		if (type === "Shiyu Defense") return selectedShiyuId === zoneId;
+		if (subType === "Deadly Assault") return selectedDaId === zoneId;
+		if (subType === "Deadly Assault (Hard)") return selectedDaHardId === zoneId;
 		return false;
 	}
 </script>

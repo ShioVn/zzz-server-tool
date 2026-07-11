@@ -147,7 +147,7 @@ async function init() {
 		_endgames = results;
 	} catch (e) {
 		_error = String(e);
-		console.error("Failed to load endgames:", e);
+		// console.error("Failed to load endgames:", e);
 	} finally {
 		_loading = false;
 	}

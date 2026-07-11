@@ -15,7 +15,7 @@ async function init() {
 		}));
 	} catch (e) {
 		_error = String(e);
-		console.error("Failed to load discs:", e);
+		// console.error("Failed to load discs:", e);
 	} finally {
 		_loading = false;
 	}

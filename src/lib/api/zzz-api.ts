@@ -1,5 +1,4 @@
-// Centralized API service for ZZZ data from nanoka.cc
-const BASE = "https://static.nanoka.cc";
+import { API_BASE } from "$lib/api/config";
 
 let latestVersion: string | null = null;
 const cache = new Map<string, any>();
@@ -19,6 +18,8 @@ async function fetchJson(url: string): Promise<any> {
 	}
 }
 
+export { fetchJson };
+
 /** Clear all cached API responses */
 export function clearCache() {
 	cache.clear();
@@ -28,7 +29,7 @@ export function clearCache() {
 /** Get the latest ZZZ version string from the manifest */
 export async function getLatestVersion(): Promise<string> {
 	if (latestVersion) return latestVersion!;
-	const manifest = await fetchJson(`${BASE}/manifest.json`);
+	const manifest = await fetchJson(`${API_BASE}/manifest.json`);
 	latestVersion = manifest.zzz.latest as string;
 	return latestVersion!;
 }
@@ -38,12 +39,12 @@ export function getAssetUrl(icon?: string): string {
 	if (!icon) return "";
 	const parts = icon.replace(/\\\\/g, "/").split("/");
 	const filename = parts[parts.length - 1].replace(/\.\w+$/, "");
-	return `${BASE}/assets/zzz/${filename}.webp`;
+	return `${API_BASE}/assets/zzz/${filename}.webp`;
 }
 
 async function getVersionedUrl(path: string): Promise<string> {
 	const ver = await getLatestVersion();
-	return `${BASE}/zzz/${ver}/${path}`;
+	return `${API_BASE}/zzz/${ver}/${path}`;
 }
 
 /** Fetch all weapons from the API */
@@ -79,31 +80,31 @@ export async function getSimul(): Promise<Record<string, any>> {
 /** Fetch a single weapon detail by id */
 export async function getWeaponDetail(id: number | string): Promise<any> {
 	const ver = await getLatestVersion();
-	return fetchJson(`${BASE}/zzz/${ver}/en/weapon/${id}.json`);
+	return fetchJson(`${API_BASE}/zzz/${ver}/en/weapon/${id}.json`);
 }
 
 /** Fetch a single character detail by id */
 export async function getCharacterDetail(id: number | string): Promise<any> {
 	const ver = await getLatestVersion();
-	return fetchJson(`${BASE}/zzz/${ver}/en/character/${id}.json`);
+	return fetchJson(`${API_BASE}/zzz/${ver}/en/character/${id}.json`);
 }
 
 /** Fetch a single shiyu detail by id */
 export async function getShiyuDetail(id: number | string): Promise<any> {
 	const ver = await getLatestVersion();
-	return fetchJson(`${BASE}/zzz/${ver}/en/shiyu/${id}.json`);
+	return fetchJson(`${API_BASE}/zzz/${ver}/en/shiyu/${id}.json`);
 }
 
 /** Fetch a single boss detail by id */
 export async function getBossDetail(id: number | string): Promise<any> {
 	const ver = await getLatestVersion();
-	return fetchJson(`${BASE}/zzz/${ver}/en/boss/${id}.json`);
+	return fetchJson(`${API_BASE}/zzz/${ver}/en/boss/${id}.json`);
 }
 
 /** Fetch a single simul detail by id */
 export async function getSimulDetail(id: number | string): Promise<any> {
 	const ver = await getLatestVersion();
-	return fetchJson(`${BASE}/zzz/${ver}/en/simul/${id}.json`);
+	return fetchJson(`${API_BASE}/zzz/${ver}/en/simul/${id}.json`);
 }
 
 /** Fetch monster data (used to filter boss icons by rarity) */

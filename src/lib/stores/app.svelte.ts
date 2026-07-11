@@ -1,6 +1,7 @@
 import { browser } from "$app/environment";
 import type { ActiveTab, Language, ZonConfig, AppState } from "$lib/types";
 import { createDefaultZonConfig } from "$lib/utils/disc";
+import { DEFAULT_PLAYER_UID } from "$lib/config";
 
 // === Persistent App State with Svelte 5 runes ===
 
@@ -12,13 +13,12 @@ let discSearch = $state("");
 let endgameSearch = $state("");
 let endgameType = $state("Shiyu Defense");
 let remiellePath = $state("");
+let remielleUid = $state(DEFAULT_PLAYER_UID);
+
 let zonConfig = $state<ZonConfig>(createDefaultZonConfig());
 let selectedAgents = $state<Record<string, number[]>>({});
 let selectedWeapons = $state<Record<string, number[]>>({});
-let agentSearchFocused = $state(false);
-let discSearchFocused = $state(false);
-let weaponSearchFocused = $state(false);
-let endgameSearchFocused = $state(false);
+
 
 export function persist() {
 	if (!browser) return;
@@ -32,6 +32,8 @@ export function persist() {
 			endgameSearch,
 			endgameType,
 			remiellePath,
+			remielleUid,
+
 			zonConfig,
 			selectedAgents,
 			selectedWeapons,
@@ -53,6 +55,8 @@ function load() {
 			endgameSearch = parsed.endgameSearch ?? "";
 			endgameType = parsed.endgameType ?? "Shiyu Defense";
 			remiellePath = parsed.remiellePath ?? "";
+			remielleUid = parsed.remielleUid ?? DEFAULT_PLAYER_UID;
+
 			zonConfig = parsed.zonConfig ?? createDefaultZonConfig();
 			selectedAgents = parsed.selectedAgents ?? {};
 			selectedWeapons = parsed.selectedWeapons ?? {};
@@ -82,19 +86,14 @@ export function getState() {
 		set endgameType(v: string) { endgameType = v; },
 		get remiellePath() { return remiellePath; },
 		set remiellePath(v: string) { remiellePath = v; },
+		get remielleUid() { return remielleUid; },
+		set remielleUid(v: string) { remielleUid = v; },
+
 		get zonConfig() { return zonConfig; },
 		set zonConfig(v: ZonConfig) { zonConfig = v; },
 		get selectedAgents() { return selectedAgents; },
 		set selectedAgents(v: Record<string, number[]>) { selectedAgents = v; },
 		get selectedWeapons() { return selectedWeapons; },
 		set selectedWeapons(v: Record<string, number[]>) { selectedWeapons = v; },
-		get agentSearchFocused() { return agentSearchFocused; },
-		set agentSearchFocused(v: boolean) { agentSearchFocused = v; },
-		get discSearchFocused() { return discSearchFocused; },
-		set discSearchFocused(v: boolean) { discSearchFocused = v; },
-		get weaponSearchFocused() { return weaponSearchFocused; },
-		set weaponSearchFocused(v: boolean) { weaponSearchFocused = v; },
-		get endgameSearchFocused() { return endgameSearchFocused; },
-		set endgameSearchFocused(v: boolean) { endgameSearchFocused = v; },
 	};
 }

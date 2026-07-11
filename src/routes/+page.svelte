@@ -10,16 +10,14 @@
 	const state = getState();
 </script>
 
-{#key state.activeTab}
-	{#if state.activeTab === "agents"}
-		<AgentsTab />
-	{:else if state.activeTab === "server"}
-		<ServerTab />
-	{:else if state.activeTab === "weapons"}
-		<WeaponsTab />
-	{:else if state.activeTab === "discs"}
-		<DiscsTab />
-	{:else if state.activeTab === "endgames"}
-		<EndgamesTab />
-	{/if}
-{/key}
+{#if state.activeTab === "agents"}
+	<AgentsTab />
+{:else if state.activeTab === "server"}
+	<ServerTab />
+{:else if state.activeTab === "weapons"}
+	<WeaponsTab />
+{:else if state.activeTab === "discs"}
+	<DiscsTab />
+{:else if state.activeTab === "endgames"}
+	<EndgamesTab />
+{/if}

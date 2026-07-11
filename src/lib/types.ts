@@ -20,6 +20,7 @@ export interface Weapon {
 	rank?: number;
 	type?: number;
 	sub?: string;
+	atk?: number;
 }
 
 export interface Disc {
@@ -51,11 +52,15 @@ export interface StatEntry {
 
 export interface AvatarOverride {
 	id: string;
+	agentId?: number;
 	level: number;
 	rank: number;
 	talents: number;
 	awakening?: number;
 	enumName?: string;
+	weaponId?: number;
+	weaponRefine?: number;
+	discSlotIds?: number[];
 }
 
 export interface WeaponConfig {
@@ -75,11 +80,6 @@ export interface DiscEntry {
 	collapsed?: boolean;
 }
 
-export interface ImportHighlights {
-	equipment: boolean;
-	weapons: boolean;
-	avatars: boolean;
-}
 
 export interface ZonConfig {
 	avatarOverrides: AvatarOverride[];
@@ -88,7 +88,6 @@ export interface ZonConfig {
 	shiyuZone?: number;
 	daZone?: number;
 	daHardZone?: number;
-	importHighlights: ImportHighlights;
 }
 
 export interface ServerStatus {
@@ -109,7 +108,7 @@ export interface ApiResponse<T = unknown> {
 }
 
 export type Language = "en" | "vi";
-export type ActiveTab = "agents" | "server" | "weapons" | "discs" | "endgames" | "remielle";
+export type ActiveTab = "agents" | "server" | "weapons" | "discs" | "endgames";
 
 export interface AppState {
 	activeTab: ActiveTab;
@@ -120,6 +119,7 @@ export interface AppState {
 	endgameSearch: string;
 	endgameType: string;
 	remiellePath: string;
+	remielleUid: string;
 	selectedAgents: Record<string, number[]>;
 	selectedWeapons: Record<string, number[]>;
 	zonConfig: ZonConfig;

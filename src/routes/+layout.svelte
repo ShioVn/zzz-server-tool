@@ -5,17 +5,19 @@
 	import { startServerPolling, stopServerPolling } from "$lib/stores/server.svelte";
 	import { onMount } from "svelte";
 	import { getToasts } from "$lib/stores/toast.svelte";
+	import { getAssetUrl } from "$lib/api/zzz-api";
+
 	let { children }: { children: import("svelte").Snippet } = $props();
 
 	const app = getState();
 	const toasts = getToasts();
 
 	const navItems = [
-		{ tab: "agents" as const, img: "https://static.nanoka.cc/assets/zzz/zzz_character.webp", key: "nav.agents" },
-		{ tab: "server" as const, img: "https://static.nanoka.cc/assets/zzz/zzz_homepage.webp", key: "nav.server" },
-		{ tab: "weapons" as const, img: "https://static.nanoka.cc/assets/zzz/zzz_weapon.webp", key: "nav.weapons" },
-		{ tab: "discs" as const, img: "https://static.nanoka.cc/assets/zzz/zzz_DriveDisc.webp", key: "nav.discs" },
-		{ tab: "endgames" as const, img: "https://static.nanoka.cc/assets/zzz/zzz_shiyu.webp", key: "nav.endgames" },
+		{ tab: "agents" as const, img: getAssetUrl("zzz_character"), key: "nav.agents" },
+		{ tab: "server" as const, img: getAssetUrl("zzz_homepage"), key: "nav.server" },
+		{ tab: "weapons" as const, img: getAssetUrl("zzz_weapon"), key: "nav.weapons" },
+		{ tab: "discs" as const, img: getAssetUrl("zzz_DriveDisc"), key: "nav.discs" },
+		{ tab: "endgames" as const, img: getAssetUrl("zzz_shiyu"), key: "nav.endgames" },
 	];
 
 	function switchTab(tab: typeof app.activeTab) {
@@ -38,23 +40,16 @@
 		}
 	});
 
-	// Auto-persist: deeply track all reactive state, persist on every change
+	// Auto-persist: debounced 400ms, lightweight field reads (no JSON.stringify of full state)
+	let persistTimer: ReturnType<typeof setTimeout> | null = null;
 	$effect(() => {
-		// Read all state to establish reactive tracking on deep mutations
-		const _ = JSON.stringify({
-			activeTab: app.activeTab,
-			language: app.language,
-			search: app.search,
-			weaponSearch: app.weaponSearch,
-			discSearch: app.discSearch,
-			endgameSearch: app.endgameSearch,
-			endgameType: app.endgameType,
-			remiellePath: app.remiellePath,
-			zonConfig: app.zonConfig,
-			selectedAgents: app.selectedAgents,
-			selectedWeapons: app.selectedWeapons,
-		});
-		persist();
+		void(app.activeTab); void(app.language); void(app.search);
+		void(app.weaponSearch); void(app.discSearch); void(app.endgameSearch); void(app.endgameType);
+		void(app.remiellePath); void(app.zonConfig); void(app.selectedAgents); void(app.selectedWeapons);
+
+		clearTimeout(persistTimer ?? undefined);
+		persistTimer = setTimeout(persist, 400);
+		return () => clearTimeout(persistTimer ?? undefined);
 	});
 </script>
 

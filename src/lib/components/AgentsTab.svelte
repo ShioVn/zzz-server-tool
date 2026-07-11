@@ -18,6 +18,7 @@
 		getRankLabel, getRankClass, getElementColor, getRankIconSvg,
 		ELEMENT_ICONS, WEAPON_TYPE_ICONS, HIT_TYPE_ICONS,
 	} from "$lib/constants";
+	import AgentCalcPanel from "$lib/stats/AgentCalcPanel.svelte";
 
 	const app = getState();
 
@@ -28,11 +29,8 @@
 	let activeCamp = $state<number | null>(null);
 	let activeRank = $state<number | null>(null);
 
-	// Modal state
-	let selectedAgentId = $state<number | null>(null);
-	let editingLevel = $state(60);
-	let editingTalents = $state(0);
-	let editingAwakening = $state<number | undefined>(undefined);
+	// Calc panel state
+	let showCalcFor = $state<number | null>(null);
 
 	const agents = $derived(getAgents());
 	const loading = $derived(isLoading());
@@ -138,59 +136,13 @@
 		]))
 	);
 
-	// --- Modal handlers ---
-	function openModal(agentId: number) {
-		const agent = agents.find((a) => a.id === agentId);
-		if (!agent) return;
-		const existing = getOverride(agentId);
-		editingLevel = existing?.level ?? 60;
-		editingTalents = existing?.talents ?? 0;
-		editingAwakening = existing?.awakening ?? agent.awakeningId;
-		selectedAgentId = agentId;
+	// --- Calc panel handlers ---
+	function openCalc(agentId: number) {
+		showCalcFor = agentId;
 	}
 
-	function closeModal() {
-		selectedAgentId = null;
-	}
-
-	function saveModal() {
-		const id = selectedAgentId;
-		if (id == null) return;
-		const agent = agents.find((a) => a.id === id);
-		const enumName = agent?.zonEnum || String(id);
-		const existing = getOverride(id);
-		if (existing) {
-			existing.id = enumName;
-			existing.level = editingLevel;
-			existing.rank = 6;
-			existing.talents = editingTalents;
-			if (editingAwakening !== undefined) existing.awakening = editingAwakening;
-		} else {
-			const override: AvatarOverride = {
-				id: enumName,
-				level: editingLevel,
-				rank: 6,
-				talents: editingTalents,
-			};
-			if (editingAwakening !== undefined) override.awakening = editingAwakening;
-			app.zonConfig.avatarOverrides.push(override);
-		}
-		app.zonConfig.importHighlights.avatars = true;
-		showToast(t("toast.avatarUpdated"), "success");
-		closeModal();
-	}
-
-	function removeAgent(id: number) {
-		const agent = agents.find((a) => a.id === id);
-		const enumName = agent?.zonEnum || String(id);
-		const idx = app.zonConfig.avatarOverrides.findIndex(
-			(a) => a.id === enumName || a.id === String(id)
-		);
-		if (idx >= 0) {
-			app.zonConfig.avatarOverrides.splice(idx, 1);
-			showToast(t("toast.avatarRemoved") ?? "Agent removed", "success");
-		}
-		closeModal();
+	function closeCalc() {
+		showCalcFor = null;
 	}
 
 	function agentInitial(name: string | undefined): string {
@@ -271,7 +223,7 @@
 				class="agent-card"
 				class:in-config={info.inConfig}
 				style="--accent: {info.elColor}"
-				onclick={() => openModal(agent.id)}
+				onclick={() => openCalc(agent.id)}
 				title={agent.name ?? String(agent.id)}
 			>
 				{#if agent.icon}
@@ -315,112 +267,12 @@
 	</div>
 </div>
 
-<!-- Agent Config Modal -->
-{#if selectedAgentId != null}
-	{@const agent = agents.find((a) => a.id === selectedAgentId)!}
-	{@const inConfig = isAgentInConfig(selectedAgentId)}
-	{@const elColor = getElementColor(agent.element)}
-	<div class="modal-overlay" onclick={closeModal} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="presentation">
-		<div class="modal-panel" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="dialog" aria-modal="true" aria-label="Configure agent" tabindex="0">
-			<button class="modal-close" aria-label="Close" onclick={closeModal}>
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
-					<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-				</svg>
-			</button>
-
-			<div class="modal-header" style="--el-color: {elColor}">
-				<div class="modal-avatar-wrap">
-					{#if agent.icon}
-						<img src={agent.icon} alt={agent.name ?? ""} class="modal-avatar" />
-					{:else}
-						<div class="modal-avatar-fallback">{agentInitial(agent.name)}</div>
-					{/if}
-					<div class="modal-rank-badge {getRankClass(agent.rank ?? 5)}">
-						{getRankLabel(agent.rank ?? 5)}
-					</div>
-				</div>
-				<div class="modal-title-group">
-					<h2 class="modal-agent-name">{agent.name ?? `Agent #${agent.id}`}</h2>
-					<div class="modal-tags">
-						<span class="modal-tag" style="--tag-color: {elColor}">
-							{elementNames[agent.element ?? -1] ?? "Unknown"}
-						</span>
-						<span class="modal-tag">{weaponTypeNames[agent.weaponType ?? -1] ?? "Unknown"}</span>
-					</div>
-				</div>
-			</div>
-
-			<div class="modal-body">
-				<div class="field-row">
-					<label for="modal-level" class="field-label">Level</label>
-					<select id="modal-level" class="field-input modal-select" bind:value={editingLevel}>
-						{#each [...Array(60).keys()] as i}
-							<option value={i + 1}>{i + 1}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="field-row">
-					<label for="talent-0" class="field-label">Talents</label>
-					<div class="talents-selector">
-						{#each [0, 1, 2, 3, 4, 5, 6] as tal}
-							<button
-								id="talent-{tal}"
-								class="talent-btn"
-								class:active={editingTalents === tal}
-								onclick={() => editingTalents = tal}
-							>
-								{tal}
-							</button>
-						{/each}
-					</div>
-				</div>
-
-				{#if agent.awakeningId}
-					<div class="field-row">
-						<label for="awakening-toggle" class="field-label">Awakening</label>
-						<div class="awakening-selector">
-							<label class="toggle-label">
-								<input
-									id="awakening-toggle"
-									type="checkbox"
-									class="toggle-input"
-									checked={editingAwakening != null}
-									onchange={(e) => {
-										if ((e.target as HTMLInputElement).checked) {
-											editingAwakening = agent.awakeningId;
-										} else {
-											editingAwakening = undefined;
-										}
-									}}
-								/>
-								<span class="toggle-track">
-									<span class="toggle-thumb"></span>
-								</span>
-								<span class="toggle-text">
-									{editingAwakening != null ? `Enabled (ID: ${editingAwakening})` : "Disabled"}
-								</span>
-							</label>
-						</div>
-					</div>
-				{/if}
-			</div>
-
-			<div class="modal-footer">
-				{#if inConfig}
-					<button class="footer-btn remove-btn" onclick={() => removeAgent(selectedAgentId!)}>
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-							<path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c-.84 0-1.673.025-2.5.075V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.325C11.673 4.025 10.84 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" />
-						</svg>
-						Remove
-					</button>
-				{/if}
-				<button class="footer-btn primary-btn" onclick={saveModal}>
-					{inConfig ? "Update" : "Add to Config"}
-				</button>
-			</div>
-		</div>
-	</div>
+<!-- Agent Calc Panel -->
+{#if showCalcFor != null}
+	{@const agent = agents.find((a) => a.id === showCalcFor)!}
+	{#if agent}
+		<AgentCalcPanel {agent} onClose={closeCalc} />
+	{/if}
 {/if}
 
 <style>
@@ -563,81 +415,6 @@
 		text-overflow: ellipsis;
 		line-height: 1.3;
 	}
-
-	/* ========== Modal ========== */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		background: rgba(2, 6, 23, 0.7);
-		backdrop-filter: blur(8px);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-		animation: fadeIn 0.15s ease-out;
-		padding: 1rem;
-	}
-
-	.modal-panel {
-		position: relative;
-		width: 100%;
-		max-width: 420px;
-		background: rgba(15, 23, 42, 0.96);
-		border: 1px solid rgba(148, 163, 184, 0.15);
-		border-radius: 28px;
-		padding: 1.5rem 1.5rem 1rem;
-		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
-		animation: slideUp 0.2s ease-out;
-	}
-
-	.modal-close {
-		position: absolute; top: 12px; right: 12px;
-		width: 32px; height: 32px; border-radius: 50%; border: none;
-		background: rgba(71, 85, 105, 0.25); color: #94a3b8;
-		cursor: pointer; display: flex; align-items: center; justify-content: center;
-		transition: all 0.15s ease; z-index: 5;
-	}
-	.modal-close:hover { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
-
-	.modal-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(148, 163, 184, 0.1); }
-
-	.modal-avatar-wrap { position: relative; flex-shrink: 0; width: 72px; height: 72px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 2px var(--el-color, #22d3ee); background: rgba(30, 41, 59, 0.7); }
-	.modal-avatar { width: 100%; height: 100%; object-fit: cover; }
-	.modal-avatar-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; color: #94a3b8; }
-
-	.modal-rank-badge { position: absolute; bottom: -3px; right: -3px; width: 24px; height: 24px; border-radius: 50%; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid rgba(2, 6, 23, 0.8); }
-
-	.modal-title-group { flex: 1; min-width: 0; }
-	.modal-agent-name { font-size: 1.15rem; font-weight: 700; color: #f1f5f9; margin: 0; line-height: 1.3; }
-	.modal-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
-	.modal-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: rgba(71, 85, 105, 0.25); color: var(--tag-color, #94a3b8); border: 1px solid color-mix(in srgb, var(--tag-color, transparent) 30%, transparent); text-transform: uppercase; letter-spacing: 0.03em; }
-
-	.modal-body { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1rem; }
-	.field-row { display: flex; flex-direction: column; gap: 0.3rem; }
-	.field-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-
-	.modal-select { padding: 0.55rem 0.75rem; font-size: 0.9rem; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2364748b'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; background-size: 1rem; padding-right: 2rem; }
-
-	.talents-selector { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-	.talent-btn { flex: 1; min-width: 36px; padding: 0.5rem 0.2rem; border-radius: 12px; border: 1px solid rgba(71, 85, 105, 0.4); background: rgba(30, 41, 59, 0.6); color: #94a3b8; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; text-align: center; }
-	.talent-btn:hover { border-color: rgba(148, 163, 184, 0.5); background: rgba(30, 41, 59, 0.85); }
-	.talent-btn.active { border-color: #22d3ee; background: rgba(34, 211, 238, 0.12); color: #a5f3fc; box-shadow: 0 0 12px rgba(34, 211, 238, 0.12); }
-
-	.awakening-selector { display: flex; }
-	.toggle-label { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
-	.toggle-input { display: none; }
-	.toggle-track { position: relative; width: 38px; height: 22px; border-radius: 999px; background: rgba(71, 85, 105, 0.4); transition: background 0.2s ease; }
-	.toggle-input:checked + .toggle-track { background: rgba(34, 211, 238, 0.5); }
-	.toggle-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #94a3b8; transition: all 0.2s ease; }
-	.toggle-input:checked + .toggle-track .toggle-thumb { left: 18px; background: #22d3ee; }
-	.toggle-text { font-size: 12px; color: #94a3b8; }
-
-	.modal-footer { display: flex; gap: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(148, 163, 184, 0.08); }
-	.footer-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.65rem 1rem; border-radius: 16px; font-size: 0.85rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s ease; }
-	.footer-btn.primary-btn { background: rgba(34, 211, 238, 0.15); border: 1px solid rgba(34, 211, 238, 0.3); color: #a5f3fc; }
-	.footer-btn.primary-btn:hover { background: rgba(34, 211, 238, 0.25); }
-	.remove-btn { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); color: #fca5a5; }
-	.remove-btn:hover { background: rgba(239, 68, 68, 0.22); }
 
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 	@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }

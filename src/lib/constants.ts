@@ -48,7 +48,10 @@ export const SLOT_COLORS = [
 
 // ── Rank helpers ──
 
-/** Get rank label (S/A/B) from numeric rank or weapon ID */
+/** Get rank label (S/A/B) from numeric rank or weapon ID
+ *  Weapon IDs: >= 14000 → S, >= 13000 → A
+ *  Rank values: >= 4 → S, >= 3 → A, else B
+ */
 export function getRankLabel(rankOrId: number): string {
 	if (rankOrId >= 14000 || rankOrId >= 4) return "S";
 	if (rankOrId >= 13000 || rankOrId >= 3) return "A";

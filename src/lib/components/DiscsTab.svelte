@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { getDiscs, isLoading, getError } from "$lib/data/discs.svelte";
 	import { getState } from "$lib/stores/app.svelte";
+	import { DEFAULT_PLAYER_UID } from "$lib/config";
 	import { t } from "$lib/i18n/index.svelte";
 	import { showToast } from "$lib/stores/toast.svelte";
+	import { runControlCommand } from "$lib/stores/server.svelte";
 	import {
 		discStatOptions,
 		getDiscSlotFromEquipId,
@@ -21,16 +23,50 @@
 	import type { DiscEntry, StatEntry } from "$lib/types";
 	import type { StatOption } from "$lib/utils/disc";
 	import { SLOT_COLORS } from "$lib/constants";
+	import { getAgents } from "$lib/data/agents.svelte";
 
 	const app = getState();
 
 	let searchInput = $state("");
 	let addIdInput = $state("");
 	let catalogOpen = $state(false);
+	let playerUid = $state(DEFAULT_PLAYER_UID);
 
 	const discs = $derived(getDiscs());
 	const loading = $derived(isLoading());
 	const error = $derived(getError());
+	const agents = $derived(getAgents());
+
+	// Per-entry agent mapping: assigns each agent to the first equipment entry
+	// with matching equipId that doesn't already have an agent assigned.
+	// This correctly handles duplicates: entry #0 → Agent A, entry #1 → Agent B.
+	const entryAgentMap = $derived.by<Map<number, { name: string; icon?: string }[]>>(() => {
+		const map = new Map<number, { name: string; icon?: string }[]>();
+		// Track which entry indices are already fully claimed (one agent per disc)
+		const claimed = new Set<number>();
+		for (const ao of app.zonConfig.avatarOverrides) {
+			if (!ao.discSlotIds?.length) continue;
+			const agent = agents.find(
+				(a) => a.zonEnum === ao.id || String(a.id) === ao.id
+			);
+			if (!agent) continue;
+			const info = { name: agent.name ?? "?", icon: agent.icon };
+			for (const equipId of ao.discSlotIds) {
+				if (!equipId) continue;
+				// Find first equipment entry with this equipId not already claimed
+				for (let i = 0; i < app.zonConfig.equipment.length; i++) {
+					if (app.zonConfig.equipment[i].id !== equipId) continue;
+					if (claimed.has(i)) continue;
+					const existing = map.get(i);
+					if (existing) existing.push(info);
+					else map.set(i, [info]);
+					claimed.add(i);
+					break;
+				}
+			}
+		}
+		return map;
+	});
 
 	$effect(() => {
 		app.discSearch = searchInput;
@@ -38,25 +74,41 @@
 
 	const filteredDiscs = $derived(
 		searchInput
-			? discs.filter((d) => d.name?.toLowerCase().includes(searchInput.toLowerCase()))
-			: discs
+			? discs.filter((d) =>
+					d.name?.toLowerCase().includes(searchInput.toLowerCase()),
+				)
+			: discs,
 	);
 
 	// === Modal state ===
-	let modalDisc = $state<{ suitId: number; name?: string; icon?: string } | null>(null);
+	let modalDisc = $state<{
+		suitId: number;
+		name?: string;
+		icon?: string;
+	} | null>(null);
 	let modalSlot = $state(1);
 	let modalLevel = $state(15);
 	let modalStar = $state(5);
-	let modalMainStat = $state<StatEntry>({ statId: 11102, value: 750, add: 1 });
+	let modalMainStat = $state<StatEntry>({
+		statId: 11102,
+		value: 750,
+		add: 1,
+	});
 	let modalSubStats = $state<StatEntry[]>([]);
 	let editIndex = $state<number | null>(null);
 
-	function getAvailSubStatOptions(rowIndex: number, mainStatId: number, subStats: StatEntry[]): StatOption[] {
+	function getAvailSubStatOptions(
+		rowIndex: number,
+		mainStatId: number,
+		subStats: StatEntry[],
+	): StatOption[] {
 		const usedIds = new Set([mainStatId]);
 		for (let i = 0; i < subStats.length; i++) {
 			if (i !== rowIndex && subStats[i]) usedIds.add(subStats[i].statId);
 		}
-		return discStatOptions.filter((s) => s.subValues?.length && !usedIds.has(s.id));
+		return discStatOptions.filter(
+			(s) => s.subValues?.length && !usedIds.has(s.id),
+		);
 	}
 
 	function openAddModal(disc: { id: number; name?: string; icon?: string }) {
@@ -65,9 +117,18 @@
 		modalLevel = 15;
 		modalStar = 5;
 		const tempId = buildDiscEquipId(disc.id, 1);
-		const tempEntry: DiscEntry = { id: tempId, level: 15, star: 5, mainStat: { statId: 11102, value: 750, add: 1 }, subStats: [] };
+		const tempEntry: DiscEntry = {
+			id: tempId,
+			level: 15,
+			star: 5,
+			mainStat: { statId: 11102, value: 750, add: 1 },
+			subStats: [],
+		};
 		modalMainStat = getDefaultDiscMainStat(tempEntry);
-		modalSubStats = getDiscEntrySubStats({ ...tempEntry, mainStat: modalMainStat });
+		modalSubStats = getDiscEntrySubStats({
+			...tempEntry,
+			mainStat: modalMainStat,
+		});
 		editIndex = null;
 	}
 
@@ -94,21 +155,48 @@
 		modalSlot = newSlot;
 		if (!modalDisc) return;
 		const tempId = buildDiscEquipId(modalDisc.suitId, newSlot);
-		const tempEntry: DiscEntry = { id: tempId, level: modalLevel, star: modalStar, mainStat: { statId: 11102, value: 750, add: 1 }, subStats: [] };
+		const tempEntry: DiscEntry = {
+			id: tempId,
+			level: modalLevel,
+			star: modalStar,
+			mainStat: { statId: 11102, value: 750, add: 1 },
+			subStats: [],
+		};
 		modalMainStat = getDefaultDiscMainStat(tempEntry);
-		modalSubStats = getDiscEntrySubStats({ ...tempEntry, mainStat: modalMainStat });
+		modalSubStats = getDiscEntrySubStats({
+			...tempEntry,
+			mainStat: modalMainStat,
+		});
 	}
 
 	function handleMainStatChange(statId: number) {
 		if (!modalDisc) return;
-		modalMainStat = { statId, value: getDiscStatDefaultValue(statId), add: 1 };
+		modalMainStat = {
+			statId,
+			value: getDiscStatDefaultValue(statId),
+			add: 1,
+		};
 		const tempId = buildDiscEquipId(modalDisc.suitId, modalSlot);
-		const tempEntry: DiscEntry = { id: tempId, level: modalLevel, star: modalStar, mainStat: modalMainStat, subStats: [] };
-		modalSubStats = getDiscEntrySubStats({ ...tempEntry, mainStat: modalMainStat });
+		const tempEntry: DiscEntry = {
+			id: tempId,
+			level: modalLevel,
+			star: modalStar,
+			mainStat: modalMainStat,
+			subStats: [],
+		};
+		modalSubStats = getDiscEntrySubStats({
+			...tempEntry,
+			mainStat: modalMainStat,
+		});
 	}
 
-	function handleSubStatChange(subIndex: number, field: string, value: string) {
+	function handleSubStatChange(
+		subIndex: number,
+		field: string,
+		value: string,
+	) {
 		if (!modalDisc) return;
+		const nextSubStats = [...modalSubStats];
 		if (field === "statId") {
 			const newId = Number(value);
 			const mainStatId = modalMainStat.statId;
@@ -116,30 +204,58 @@
 			if (newId === mainStatId) {
 				// Swap with main stat
 				const oldMain = { ...modalMainStat };
-				const oldSub = { ...modalSubStats[subIndex] };
-				modalMainStat = { statId: oldSub.statId, value: oldSub.value, add: oldSub.add ?? 1 };
-				modalSubStats[subIndex] = { statId: oldMain.statId, value: oldMain.value, add: 1 };
+				const oldSub = { ...nextSubStats[subIndex] };
+				modalMainStat = {
+					statId: oldSub.statId,
+					value: oldSub.value,
+					add: oldSub.add ?? 1,
+				};
+				nextSubStats[subIndex] = {
+					statId: oldMain.statId,
+					value: oldMain.value,
+					add: 1,
+				};
 			} else {
-				const dupIdx = modalSubStats.findIndex((s, i) => i !== subIndex && s.statId === newId);
+				const dupIdx = nextSubStats.findIndex(
+					(s, i) => i !== subIndex && s.statId === newId,
+				);
 				if (dupIdx >= 0) {
 					// Swap the two sub stats
-					const temp = { ...modalSubStats[dupIdx] };
-					modalSubStats[dupIdx] = { ...modalSubStats[subIndex] };
-					modalSubStats[subIndex] = temp;
+					const temp = { ...nextSubStats[dupIdx] };
+					nextSubStats[dupIdx] = { ...nextSubStats[subIndex] };
+					nextSubStats[subIndex] = temp;
 				} else {
-					modalSubStats[subIndex] = { statId: newId, value: getDiscStatDefaultValue(newId, "sub"), add: 0 };
+					nextSubStats[subIndex] = {
+						statId: newId,
+						value: getDiscStatDefaultValue(newId, "sub"),
+						add: 0,
+					};
 				}
 			}
 		} else if (field === "value") {
-			modalSubStats[subIndex].value = clampNumber(value, 0, 999999, modalSubStats[subIndex].value);
+			nextSubStats[subIndex] = {
+				...nextSubStats[subIndex],
+				value: clampNumber(value, 0, 999999, nextSubStats[subIndex].value),
+			};
 		} else if (field === "add") {
-			modalSubStats[subIndex].add = clampNumber(value, 0, 5, modalSubStats[subIndex].add ?? 0);
+			nextSubStats[subIndex] = {
+				...nextSubStats[subIndex],
+				add: clampNumber(value, 0, 5, nextSubStats[subIndex].add ?? 0),
+			};
 		}
+		modalSubStats = nextSubStats;
 	}
 
-	function saveDisc() {
+	async function saveDisc() {
 		if (!modalDisc) return;
 		const equipId = buildDiscEquipId(modalDisc.suitId, modalSlot);
+		
+		// Prevent duplicate equipIds
+		if (editIndex == null && app.zonConfig.equipment.some((e) => e.id === equipId)) {
+			showToast("Disc with this equipId already exists", "error");
+			return;
+		}
+
 		const entry: DiscEntry = {
 			id: equipId,
 			level: modalLevel,
@@ -153,8 +269,31 @@
 		} else {
 			app.zonConfig.equipment.push(entry);
 		}
-		app.zonConfig.importHighlights.equipment = true;
-		showToast(editIndex != null ? "Disc updated" : t("disc.added"), "success");
+
+		// Send to server via rmctl
+		try {
+			const uid = playerUid || DEFAULT_PLAYER_UID;
+			const args = [
+				uid,
+				String(entry.id),
+				String(entry.level ?? 15),
+				String(entry.star ?? 5),
+				String(entry.mainStat.statId),
+				String(entry.mainStat.value),
+				String(entry.mainStat.add ?? 0),
+			];
+			for (const sub of entry.subStats) {
+				const rolls = (sub.add ?? 0) + 1;
+				args.push(String(sub.statId), String(sub.value), String(rolls));
+			}
+			await runControlCommand("create-equip", args);
+			showToast(
+				editIndex != null ? "Disc updated" : t("disc.added"),
+				"success",
+			);
+		} catch (err) {
+			showToast("Failed to apply disc to server: " + String(err), "error");
+		}
 		closeModal();
 	}
 
@@ -206,8 +345,19 @@
 	<!-- Header: Search + Add by ID + Toggle Catalog -->
 	<div class="flex items-center gap-3 mb-5">
 		<div class="relative flex-1">
-			<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+			<svg
+				class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+				xmlns="http://www.w3.org/2000/svg"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke-width="2"
+				stroke="currentColor"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+				/>
 			</svg>
 			<input
 				id="disc-search"
@@ -224,23 +374,40 @@
 				class="field-input !w-28 !py-2.5 text-sm"
 				placeholder="Equip ID"
 				bind:value={addIdInput}
-				onkeydown={(e) => { if (e.key === "Enter") addDiscById(); }}
+				onkeydown={(e) => {
+					if (e.key === "Enter") addDiscById();
+				}}
 			/>
-			<button class="primary-btn !py-2.5 !px-4 text-sm" onclick={addDiscById} title={t("disc.add")}>
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-					<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+			<button
+				class="primary-btn !py-2.5 !px-4 text-sm"
+				onclick={addDiscById}
+				title={t("disc.add")}
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					class="h-4 w-4"
+				>
+					<path
+						d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
+					/>
 				</svg>
 			</button>
 		</div>
 	</div>
 
 	<!-- Add Disc button — opens catalog popup -->
-	<button
-		class="catalog-open-btn"
-		onclick={() => catalogOpen = true}
-	>
-		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="catalog-open-icon">
-			<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+	<button class="catalog-open-btn" onclick={() => (catalogOpen = true)}>
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 20 20"
+			fill="currentColor"
+			class="catalog-open-icon"
+		>
+			<path
+				d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
+			/>
 		</svg>
 		<span>Add Disc</span>
 	</button>
@@ -250,19 +417,24 @@
 		{@const sortedEquipment = app.zonConfig.equipment
 			.map((e, i) => ({ entry: e, originalIndex: i }))
 			.sort((a, b) => {
-				const nameA = (getSuitName(getDiscSuitIdFromEquipId(a.entry.id)) || "").toLowerCase();
-				const nameB = (getSuitName(getDiscSuitIdFromEquipId(b.entry.id)) || "").toLowerCase();
+				const nameA = (
+					getSuitName(getDiscSuitIdFromEquipId(a.entry.id)) || ""
+				).toLowerCase();
+				const nameB = (
+					getSuitName(getDiscSuitIdFromEquipId(b.entry.id)) || ""
+				).toLowerCase();
 				if (nameA < nameB) return -1;
 				if (nameA > nameB) return 1;
 				const slotA = getDiscSlotFromEquipId(a.entry.id);
 				const slotB = getDiscSlotFromEquipId(b.entry.id);
 				return slotA - slotB;
-			})
-		}
+			})}
 		<section>
 			<h3 class="text-sm font-semibold text-white mb-3">
 				{t("disc.inventory")}
-				<span class="text-xs font-normal text-slate-500 ml-2">({app.zonConfig.equipment.length})</span>
+				<span class="text-xs font-normal text-slate-500 ml-2"
+					>({app.zonConfig.equipment.length})</span
+				>
 			</h3>
 			<div class="disc-inv-grid">
 				{#each sortedEquipment as { entry, originalIndex }}
@@ -270,20 +442,48 @@
 					{@const slot = getDiscSlotFromEquipId(entry.id)}
 					{@const accent = slotAccent(slot)}
 					{@const icon = getDiscIconUrl(suitId)}
+					{@const eqAgents = entryAgentMap.get(originalIndex)}
 					<button
 						class="inv-card"
 						style="--card-accent: {accent}"
 						onclick={() => openEditModal(originalIndex)}
 					>
+						<!-- Agent badge (circular icon on corner) -->
+						{#if eqAgents && eqAgents.length > 0}
+							{@const ag = eqAgents[0]}
+							<div class="inv-agent-badge">
+								{#if ag.icon}
+									<img
+										src={ag.icon}
+										alt={ag.name}
+										class="inv-agent-icon"
+										loading="lazy"
+									/>
+								{:else}
+									<span class="inv-agent-initial">{ag.name.charAt(0)}</span>
+								{/if}
+							</div>
+						{/if}
 						<!-- Slot badge -->
-						<div class="inv-slot-badge" style="background: {accent}">S{slot}</div>
-
+						<div
+							class="inv-slot-badge"
+							style="background: {accent}"
+						>
+							S{slot}
+						</div>
 						<!-- Icon -->
 						<div class="inv-icon-wrap">
 							{#if icon}
-								<img src={icon} alt={getSuitName(suitId)} class="inv-icon" loading="lazy" />
+								<img
+									src={icon}
+									alt={getSuitName(suitId)}
+									class="inv-icon"
+									loading="lazy"
+								/>
 							{:else}
-								<div class="inv-icon-fallback">{getSuitName(suitId).charAt(0)}</div>
+								<div class="inv-icon-fallback">
+									{getSuitName(suitId).charAt(0)}
+								</div>
 							{/if}
 						</div>
 
@@ -291,15 +491,23 @@
 						<div class="inv-header">
 							<p class="inv-name">{getSuitName(suitId)}</p>
 							<div class="inv-meta">
-								<span class="inv-level">Lv.{entry.level ?? 15}</span>
-								<span class="inv-star">{'★'.repeat(entry.star ?? 5)}</span>
+								<span class="inv-level"
+									>Lv.{entry.level ?? 15}</span
+								>
+								<span class="inv-star"
+									>{"★".repeat(entry.star ?? 5)}</span
+								>
 							</div>
 						</div>
 
 						<!-- Main Stat -->
 						<div class="inv-mainstat">
-							<span class="inv-stat-label">{getStatName(entry.mainStat.statId)}</span>
-							<span class="inv-stat-value">{getMainStatDisplayValue(entry.mainStat)}</span>
+							<span class="inv-stat-label"
+								>{getStatName(entry.mainStat.statId)}</span
+							>
+							<span class="inv-stat-value"
+								>{getMainStatDisplayValue(entry.mainStat)}</span
+							>
 						</div>
 
 						<!-- Sub Stats -->
@@ -307,10 +515,16 @@
 							<div class="inv-substats">
 								{#each entry.subStats.slice(0, 4) as sub}
 									<div class="inv-substat">
-										<span class="inv-sub-label">{getStatName(sub.statId)}</span>
-										<span class="inv-sub-value">{getSubStatDisplayValue(sub)}</span>
+										<span class="inv-sub-label"
+											>{getStatName(sub.statId)}</span
+										>
+										<span class="inv-sub-value"
+											>{getSubStatDisplayValue(sub)}</span
+										>
 										{#if (sub.add ?? 0) > 0}
-											<span class="inv-sub-roll">+{sub.add}</span>
+											<span class="inv-sub-roll"
+												>+{sub.add}</span
+											>
 										{/if}
 									</div>
 								{/each}
@@ -319,8 +533,17 @@
 
 						<!-- Remove button overlay -->
 						<div class="inv-remove-hint">
-							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5">
-								<path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c-.84 0-1.673.025-2.5.075V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.325C11.673 4.025 10.84 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" />
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								class="h-3.5 w-3.5"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c-.84 0-1.673.025-2.5.075V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.325C11.673 4.025 10.84 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
+									clip-rule="evenodd"
+								/>
 							</svg>
 						</div>
 					</button>
@@ -332,25 +555,67 @@
 
 <!-- Catalog Popup Overlay -->
 {#if catalogOpen}
-	<div class="catalog-overlay" onclick={() => catalogOpen = false} onkeydown={(e) => e.key === 'Escape' && (catalogOpen = false)} role="presentation">
-		<div class="catalog-popup" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (catalogOpen = false)} role="dialog" aria-modal="true" aria-label="Disc catalog" tabindex="-1">
+	<div
+		class="catalog-overlay"
+		onclick={() => (catalogOpen = false)}
+		onkeydown={(e) => e.key === "Escape" && (catalogOpen = false)}
+		role="presentation"
+	>
+		<div
+			class="catalog-popup"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === "Escape" && (catalogOpen = false)}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Disc catalog"
+			tabindex="-1"
+		>
 			<div class="catalog-popup-header">
 				<h2 class="catalog-popup-title">
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="catalog-popup-title-icon">
-						<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						class="catalog-popup-title-icon"
+					>
+						<path
+							d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
+						/>
 					</svg>
 					Select Disc Set
 				</h2>
-				<button class="catalog-popup-close" onclick={() => catalogOpen = false} aria-label="Close">
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
-						<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+				<button
+					class="catalog-popup-close"
+					onclick={() => (catalogOpen = false)}
+					aria-label="Close"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						class="h-5 w-5"
+					>
+						<path
+							d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+						/>
 					</svg>
 				</button>
 			</div>
 
 			<div class="catalog-popup-search">
-				<svg class="catalog-popup-search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+				<svg
+					class="catalog-popup-search-icon"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="2"
+					stroke="currentColor"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+					/>
 				</svg>
 				<input
 					id="catalog-popup-search"
@@ -363,17 +628,26 @@
 
 			<div class="catalog-popup-body">
 				{#if loading}
-					<div class="text-center text-sm text-slate-400 py-8">{t("disc.loading")}</div>
+					<div class="text-center text-sm text-slate-400 py-8">
+						{t("disc.loading")}
+					</div>
 				{:else if error}
-					<div class="text-center text-sm text-red-400 py-8">{t("disc.loadError")}: {error}</div>
+					<div class="text-center text-sm text-red-400 py-8">
+						{t("disc.loadError")}: {error}
+					</div>
 				{:else if filteredDiscs.length === 0}
-					<div class="text-center text-sm text-slate-400 py-8">{t("disc.noResults")}</div>
+					<div class="text-center text-sm text-slate-400 py-8">
+						{t("disc.noResults")}
+					</div>
 				{:else}
 					<div class="disc-grid">
 						{#each filteredDiscs as disc (disc.id)}
 							<button
 								class="catalog-card"
-								onclick={() => { catalogOpen = false; openAddModal(disc); }}
+								onclick={() => {
+									catalogOpen = false;
+									openAddModal(disc);
+								}}
 							>
 								<div class="catalog-card-glow"></div>
 								{#if disc.icon}
@@ -387,12 +661,21 @@
 									<div class="catalog-icon-fallback">?</div>
 								{/if}
 								<div class="catalog-info">
-									<p class="catalog-name">{disc.name ?? `Set #${disc.id}`}</p>
+									<p class="catalog-name">
+										{disc.name ?? `Set #${disc.id}`}
+									</p>
 									<p class="catalog-id">ID {disc.id}</p>
 								</div>
 								<div class="catalog-add-hint">
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-										<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										class="h-4 w-4"
+									>
+										<path
+											d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
+										/>
 									</svg>
 								</div>
 							</button>
@@ -404,29 +687,54 @@
 	</div>
 {/if}
 
-<!-- Config Modal -->
 {#if modalDisc}
+	{@const modalIdx = editIndex != null ? editIndex : -1}
+	{@const candidateEquipId = buildDiscEquipId(modalDisc.suitId, modalSlot)}
+	{@const modalEqAgents = editIndex != null
+		? entryAgentMap.get(editIndex)
+		: []}
 	{@const accent = slotAccent(modalSlot)}
-	<div class="modal-overlay" onclick={closeModal} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="presentation">
-		<div class="modal-panel" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && closeModal()} role="dialog" aria-modal="true" aria-label="Configure disc" tabindex="0">
+	<div
+		class="modal-overlay"
+		onclick={closeModal}
+		onkeydown={(e) => e.key === "Escape" && closeModal()}
+		role="presentation"
+	>
+		<div
+			class="modal-panel"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.key === "Escape" && closeModal()}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Configure disc"
+			tabindex="0"
+		>
 			<button class="modal-close" aria-label="Close" onclick={closeModal}>
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
-					<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					class="h-5 w-5"
+				>
+					<path
+						d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+					/>
 				</svg>
 			</button>
 
 			<div class="modal-header" style="--accent: {accent}">
 				<div class="modal-icon-wrap">
 					{#if modalDisc.icon}
-						<img src={modalDisc.icon} alt={modalDisc.name ?? ""} class="modal-icon" />
+						<img src={modalDisc.icon} alt={modalDisc.name ?? ""} class="modal-icon" loading="lazy" />
 					{:else}
-						<div class="modal-icon-fallback">{(modalDisc.name ?? "?").charAt(0)}</div>
+						{@const icon = getDiscIconUrl(modalDisc.suitId)}
+						{#if icon}
+							<img src={icon} alt={modalDisc.name ?? ""} class="modal-icon" loading="lazy" />
+						{:else}
+							<div class="modal-icon-fallback">{(modalDisc.name ?? "?").charAt(0)}</div>
+						{/if}
 					{/if}
-					<div class="modal-slot-badge" style="background: {accent}">S{modalSlot}</div>
-				</div>
-				<div class="modal-title-group">
-					<h2 class="modal-name">{modalDisc.name ?? `Disc Set #${modalDisc.suitId}`}</h2>
-					<p class="modal-subtitle">Set ID: {modalDisc.suitId} &middot; {editIndex != null ? "Editing" : "Adding"}</p>
+				<p class="modal-subtitle">Set ID: {modalDisc.suitId} &middot; {editIndex != null ? "Editing" : "Adding"}</p>
 				</div>
 			</div>
 
@@ -434,13 +742,21 @@
 				<!-- Row 1: Slot + Level -->
 				<div class="modal-row-2">
 					<div class="field-group">
-						<span id="modal-slot-label" class="field-label">{t("disc.slot")}</span>
-						<div class="slot-selector" aria-labelledby="modal-slot-label" role="radiogroup">
+						<span id="modal-slot-label" class="field-label"
+							>{t("disc.slot")}</span
+						>
+						<div
+							class="slot-selector"
+							aria-labelledby="modal-slot-label"
+							role="radiogroup"
+						>
 							{#each [1, 2, 3, 4, 5, 6] as s}
 								<button
 									class="slot-btn"
 									class:active={modalSlot === s}
-									style={modalSlot === s ? `--btn-accent: ${slotAccent(s)}` : ""}
+									style={modalSlot === s
+										? `--btn-accent: ${slotAccent(s)}`
+										: ""}
 									onclick={() => handleSlotChange(s)}
 								>
 									{s}
@@ -456,35 +772,109 @@
 
 				<!-- Main Stat -->
 				<div class="field-group">
-					<label for="modal-mainstat" class="field-label">{t("disc.mainStat")}</label>
+					<label for="modal-mainstat" class="field-label"
+						>{t("disc.mainStat")}</label
+					>
 					<div class="mainstat-row">
-						<select id="modal-mainstat" class="field-input modal-select flex-1" value={modalMainStat.statId}
-							onchange={(e) => handleMainStatChange(Number((e.target as HTMLSelectElement).value))}>
-							{#each getDiscMainStatOptions({ id: buildDiscEquipId(modalDisc.suitId, modalSlot), level: modalLevel, star: modalStar, mainStat: modalMainStat, subStats: [] }) as opt}
+						<select
+							id="modal-mainstat"
+							class="field-input modal-select flex-1"
+							value={modalMainStat.statId}
+							onchange={(e) =>
+								handleMainStatChange(
+									Number(
+										(e.target as HTMLSelectElement).value,
+									),
+								)}
+						>
+							{#each getDiscMainStatOptions( { id: buildDiscEquipId(modalDisc.suitId, modalSlot), level: modalLevel, star: modalStar, mainStat: modalMainStat, subStats: [] } ) as opt}
 								<option value={opt.id}>{opt.name}</option>
 							{/each}
 						</select>
-						<input id="modal-mainstat-value" type="number" class="field-input !w-28" value={modalMainStat.value}
-							onchange={(e) => modalMainStat.value = clampNumber((e.target as HTMLInputElement).value, 0, 999999, modalMainStat.value)} />
+						<input
+							id="modal-mainstat-value"
+							type="number"
+							class="field-input !w-28"
+							value={modalMainStat.value}
+							onchange={(e) =>
+								(modalMainStat.value = clampNumber(
+									(e.target as HTMLInputElement).value,
+									0,
+									999999,
+									modalMainStat.value,
+								))}
+						/>
 					</div>
 				</div>
 
 				<!-- Sub Stats -->
 				<div class="field-group">
-					<span id="modal-substats-label" class="field-label">{t("disc.subStats")}</span>
-					<div class="substats-grid" aria-labelledby="modal-substats-label">
+					<span id="modal-substats-label" class="field-label"
+						>{t("disc.subStats")}</span
+					>
+					<div
+						class="substats-grid"
+						aria-labelledby="modal-substats-label"
+					>
 						{#each modalSubStats as sub, si}
 							<div class="substat-row">
-								<select id={"modal-substat-" + si + "-stat"} class="field-input modal-select flex-1" value={sub.statId}
-									onchange={(e) => handleSubStatChange(si, "statId", (e.target as HTMLSelectElement).value)}>
+								<select
+									id={"modal-substat-" + si + "-stat"}
+									class="field-input modal-select flex-1"
+									value={sub.statId}
+									onchange={(e) =>
+										handleSubStatChange(
+											si,
+											"statId",
+											(e.target as HTMLSelectElement)
+												.value,
+										)}
+								>
 									{#each getAvailSubStatOptions(si, modalMainStat.statId, modalSubStats) as opt}
-										<option value={opt.id}>{opt.name}</option>
+										<option value={opt.id}
+											>{opt.name}</option
+										>
 									{/each}
 								</select>
-								<input type="number" class="field-input !w-20" value={sub.value}
-									onchange={(e) => handleSubStatChange(si, "value", (e.target as HTMLInputElement).value)} />
-								<select class="field-input !w-16" value={sub.add ?? 0}
-									onchange={(e) => handleSubStatChange(si, "add", (e.target as HTMLSelectElement).value)}>
+								<input
+									type="number"
+									class="field-input !w-20"
+									value={sub.value}
+									oninput={(e) => {
+										modalSubStats = modalSubStats.map((item, index) =>
+											index === si
+												? {
+														...item,
+														value: clampNumber(
+															(e.target as HTMLInputElement).value,
+															0,
+															999999,
+															sub.value ?? 0,
+														),
+												  }
+												: item,
+										);
+									}}
+								/>
+								<select
+									class="field-input !w-16"
+									value={sub.add ?? 0}
+									onchange={(e) => {
+										modalSubStats = modalSubStats.map((item, index) =>
+											index === si
+												? {
+														...item,
+														add: clampNumber(
+															(e.target as HTMLSelectElement).value,
+															0,
+															5,
+															sub.add ?? 0,
+														),
+												  }
+												: item,
+										);
+									}}
+								>
 									{#each [0, 1, 2, 3, 4, 5] as a}
 										<option value={a}>+{a}</option>
 									{/each}
@@ -497,9 +887,21 @@
 
 			<div class="modal-footer">
 				{#if editIndex != null}
-					<button class="footer-btn remove-btn" onclick={() => removeDisc(editIndex!)}>
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-							<path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c-.84 0-1.673.025-2.5.075V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.325C11.673 4.025 10.84 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" />
+					<button
+						class="footer-btn remove-btn"
+						onclick={() => removeDisc(editIndex!)}
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							class="h-4 w-4"
+						>
+							<path
+								fill-rule="evenodd"
+								d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c-.84 0-1.673.025-2.5.075V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.325C11.673 4.025 10.84 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
+								clip-rule="evenodd"
+							/>
 						</svg>
 						Remove
 					</button>
@@ -639,7 +1041,9 @@
 		color: #f8fafc;
 		outline: none;
 		font-size: 0.85rem;
-		transition: border-color 180ms ease, box-shadow 180ms ease;
+		transition:
+			border-color 180ms ease,
+			box-shadow 180ms ease;
 	}
 	.catalog-popup-search-input:focus {
 		border-color: rgba(34, 211, 238, 0.6);
@@ -694,7 +1098,11 @@
 		position: absolute;
 		inset: 0;
 		opacity: 0;
-		background: radial-gradient(ellipse at 50% 0%, rgba(34, 211, 238, 0.1), transparent 70%);
+		background: radial-gradient(
+			ellipse at 50% 0%,
+			rgba(34, 211, 238, 0.1),
+			transparent 70%
+		);
 		transition: opacity 0.25s ease;
 		pointer-events: none;
 	}
@@ -793,16 +1201,46 @@
 		background: rgba(15, 23, 42, 0.6);
 		cursor: pointer;
 		transition: all 0.2s ease;
-		overflow: hidden;
+		overflow: visible;
 		outline: none;
 		text-align: left;
 	}
 
 	.inv-card:hover {
 		border-color: var(--card-accent, rgba(34, 211, 238, 0.35));
-		box-shadow: 0 0 24px color-mix(in srgb, var(--card-accent, #22d3ee) 15%, transparent);
+		box-shadow: 0 0 24px
+			color-mix(in srgb, var(--card-accent, #22d3ee) 15%, transparent);
 		transform: translateY(-2px);
 		background: rgba(15, 23, 42, 0.85);
+	}
+
+	.inv-agent-badge {
+		position: absolute;
+		top: -20px;
+		left: -20px;
+		width: 70px;
+		height: 70px;
+		border-radius: 50%;
+		background: rgba(2, 6, 23, 0.75);
+		border: 1.5px solid rgba(148, 163, 184, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+		z-index: 2;
+	}
+	.inv-agent-icon {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transform: scale(2) translateY(0px);
+		transform-origin: top center;
+	}
+	.inv-agent-initial {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: #94a3b8;
+		line-height: 1;
 	}
 
 	.inv-slot-badge {
@@ -884,7 +1322,8 @@
 		padding: 0.3rem 0.5rem;
 		border-radius: 10px;
 		background: rgba(var(--card-accent-rgb, 34, 211, 238), 0.08);
-		border: 1px solid color-mix(in srgb, var(--card-accent, #22d3ee) 20%, transparent);
+		border: 1px solid
+			color-mix(in srgb, var(--card-accent, #22d3ee) 20%, transparent);
 	}
 
 	.inv-stat-label {
@@ -995,61 +1434,104 @@
 	}
 
 	.modal-close {
-		position: absolute; top: 12px; right: 12px;
-		width: 32px; height: 32px; border-radius: 50%; border: none;
-		background: rgba(71, 85, 105, 0.25); color: #94a3b8;
-		cursor: pointer; display: flex; align-items: center; justify-content: center;
-		transition: all 0.15s ease; z-index: 5;
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: none;
+		background: rgba(71, 85, 105, 0.25);
+		color: #94a3b8;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
+		z-index: 5;
 	}
-	.modal-close:hover { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+	.modal-close:hover {
+		background: rgba(239, 68, 68, 0.25);
+		color: #fca5a5;
+	}
 
 	.modal-header {
-		display: flex; align-items: center; gap: 1rem;
-		margin-bottom: 1.25rem; padding-bottom: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1.25rem;
+		padding-bottom: 1rem;
 		border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 	}
 
 	.modal-icon-wrap {
-		position: relative; flex-shrink: 0;
-		width: 84px; height: 84px; border-radius: 16px; overflow: hidden;
+		position: relative;
+		flex-shrink: 0;
+		width: 84px;
+		height: 84px;
+		border-radius: 16px;
+		overflow: visible;
 		box-shadow: 0 0 0 2px var(--accent, #22d3ee);
 		background: rgba(30, 41, 59, 0.7);
-		display: flex; align-items: center; justify-content: center;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.modal-icon { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+	.modal-icon {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		padding: 6px;
+	}
 	.modal-icon-fallback {
-		font-size: 1.5rem; font-weight: 700; color: #94a3b8;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #94a3b8;
 	}
 
-	.modal-slot-badge {
-		position: absolute; bottom: -4px; right: -4px;
-		width: 24px; height: 24px; border-radius: 50%;
-		font-size: 10px; font-weight: 800;
-		display: flex; align-items: center; justify-content: center;
-		border: 2px solid rgba(2, 6, 23, 0.8);
-		color: #02050f;
+
+
+	.modal-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		margin-bottom: 1rem;
 	}
-
-	.modal-title-group { flex: 1; min-width: 0; }
-	.modal-name { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; margin: 0; line-height: 1.3; }
-	.modal-subtitle { font-size: 0.75rem; color: #64748b; margin-top: 0.2rem; }
-
-	.modal-body { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1rem; }
-	.field-group { display: flex; flex-direction: column; gap: 0.35rem; }
-	.field-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+	.field-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+	.field-label {
+		font-size: 11px;
+		font-weight: 600;
+		color: #64748b;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
 
 	.modal-select {
-		padding: 0.55rem 0.75rem; font-size: 0.85rem; cursor: pointer; appearance: none;
+		padding: 0.55rem 0.75rem;
+		font-size: 0.85rem;
+		cursor: pointer;
+		appearance: none;
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2364748b'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
-		background-repeat: no-repeat; background-position: right 0.6rem center; background-size: 1rem;
+		background-repeat: no-repeat;
+		background-position: right 0.6rem center;
+		background-size: 1rem;
 		padding-right: 2rem;
 	}
 
 	.level-display {
-		padding: 0.55rem 0.75rem; font-size: 0.85rem; font-weight: 600; color: #a5f3fc;
-		background: rgba(34, 211, 238, 0.08); border-radius: 6px;
-		text-align: center; letter-spacing: 0.02em;
+		padding: 0.55rem 0.75rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: #a5f3fc;
+		background: rgba(34, 211, 238, 0.08);
+		border-radius: 6px;
+		text-align: center;
+		letter-spacing: 0.02em;
 	}
 
 	.modal-row-2 {
@@ -1084,9 +1566,14 @@
 
 	.slot-btn.active {
 		border-color: var(--btn-accent, #22d3ee);
-		background: color-mix(in srgb, var(--btn-accent, #22d3ee) 15%, transparent);
+		background: color-mix(
+			in srgb,
+			var(--btn-accent, #22d3ee) 15%,
+			transparent
+		);
 		color: var(--btn-accent, #a5f3fc);
-		box-shadow: 0 0 12px color-mix(in srgb, var(--btn-accent, #22d3ee) 15%, transparent);
+		box-shadow: 0 0 12px
+			color-mix(in srgb, var(--btn-accent, #22d3ee) 15%, transparent);
 	}
 
 	.mainstat-row {
@@ -1112,21 +1599,60 @@
 	}
 
 	.modal-footer {
-		display: flex; gap: 0.75rem; padding-top: 0.75rem;
+		display: flex;
+		gap: 0.75rem;
+		padding-top: 0.75rem;
 		border-top: 1px solid rgba(148, 163, 184, 0.08);
 	}
 
 	.footer-btn {
-		flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
-		padding: 0.65rem 1rem; border-radius: 16px; font-size: 0.85rem; font-weight: 600;
-		border: none; cursor: pointer; transition: all 0.15s ease;
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.4rem;
+		padding: 0.65rem 1rem;
+		border-radius: 16px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		border: none;
+		cursor: pointer;
+		transition: all 0.15s ease;
 	}
 
-	.footer-btn.primary-btn { background: rgba(34, 211, 238, 0.15); border: 1px solid rgba(34, 211, 238, 0.3); color: #a5f3fc; }
-	.footer-btn.primary-btn:hover { background: rgba(34, 211, 238, 0.25); }
-	.remove-btn { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); color: #fca5a5; }
-	.remove-btn:hover { background: rgba(239, 68, 68, 0.22); }
+	.footer-btn.primary-btn {
+		background: rgba(34, 211, 238, 0.15);
+		border: 1px solid rgba(34, 211, 238, 0.3);
+		color: #a5f3fc;
+	}
+	.footer-btn.primary-btn:hover {
+		background: rgba(34, 211, 238, 0.25);
+	}
+	.remove-btn {
+		background: rgba(239, 68, 68, 0.12);
+		border: 1px solid rgba(239, 68, 68, 0.25);
+		color: #fca5a5;
+	}
+	.remove-btn:hover {
+		background: rgba(239, 68, 68, 0.22);
+	}
 
-	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-	@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes slideUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px) scale(0.97);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
 </style>
